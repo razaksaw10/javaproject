@@ -9,8 +9,8 @@ package yeni;
 	public class Database {
 
 	    private static final String URL = "jdbc:mysql://localhost:3306/deneme3";  // URL de la base de données
-	    private static final String USER = "root";  // Utilisateur MySQL
-	    private static final String PASSWORD = "Razak@1234";  // Mot de passe (vide par défaut pour root)
+	    private static final String USER = "#";  // Utilisateur MySQL
+	    private static final String PASSWORD = "#";  // Mot de passe (vide par défaut pour root)
 
 	    public static Connection getConnection() throws SQLException {
 	        try {
