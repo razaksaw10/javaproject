@@ -1,564 +1,4 @@
-/*
 
-package yeni;
-
-import javax.swing.*;
-import java.awt.*;
-import java.sql.*;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-
-public class SystemeDeVote {
-
-    static boolean estConnecte = false;
-    static String identifiantConnecte = ""; // Pour suivre l'utilisateur connecté
-    static boolean aVote = false; // Pour vérifier si l'utilisateur a déjà voté
-
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            creerAdminParDefaut(); // Vérifie et crée un admin par défaut si nécessaire
-            afficherPageAccueil(); // Affiche la page d'accueil
-        });
-    }
-
-    // Création d'un administrateur par défaut
-    static void creerAdminParDefaut() {
-        try (Connection conn = Database.getConnection()) {
-            // Vérifie si un administrateur existe déjà
-            String checkAdminQuery = "SELECT * FROM utilisateurs WHERE role = 'admin'";
-            try (PreparedStatement ps = conn.prepareStatement(checkAdminQuery)) {
-                ResultSet rs = ps.executeQuery();
-                if (rs.next()) {
-                    return; // Un admin existe déjà, on ne fait rien
-                }
-            }
-
-            // Si aucun admin n'existe, insère un administrateur par défaut
-            String insertAdminQuery = "INSERT INTO utilisateurs (identifiant, mot_de_passe, role, age) VALUES (?, ?, ?, ?)";
-            try (PreparedStatement ps = conn.prepareStatement(insertAdminQuery)) {
-                ps.setString(1, "admin");
-                ps.setString(2, hashPassword("admin123")); // Mot de passe par défaut
-                ps.setString(3, "admin"); // Rôle administrateur
-                ps.setInt(4, 30); // Âge par défaut
-                ps.executeUpdate();
-                System.out.println("Administrateur par défaut créé avec succès.");
-            }
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "Erreur lors de la création de l'administrateur par défaut : " + e.getMessage());
-        }
-    }
-
-    // Page d'accueil
-    static void afficherPageAccueil() {
-        JFrame frame = new JFrame("Système de Vote Électronique");
-        frame.setSize(500, 400);
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-
-        JPanel panel = new JPanel(new GridBagLayout()); // Utilisation de GridBagLayout pour centrer
-        panel.setBackground(new Color(230, 230, 250));
-        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(10, 0, 10, 0); // Marges entre les composants
-        gbc.gridx = 0; // Colonne unique
-        gbc.weightx = 1; // Permet un alignement horizontal uniforme
-
-        JButton btnConnexion = new JButton("Connexion");
-        JButton btnInscription = new JButton("S’inscrire");
-      
-        JButton btnVoirNotifications = new JButton("Voir Notifications (Admin)");
-        JButton btnVoirResultats = new JButton("Voir les résultats");
-        JButton btnQuitter = new JButton("Quitter");
-
-        styliserBouton(btnConnexion);
-        styliserBouton(btnInscription);
-     
-        styliserBouton(btnVoirNotifications);
-        styliserBouton(btnVoirResultats);
-        styliserBouton(btnQuitter);
-
-        btnConnexion.addActionListener(e -> connexion());
-        btnInscription.addActionListener(e -> inscrire());
-
-        btnVoirNotifications.addActionListener(e -> afficherNotifications());
-        btnVoirResultats.addActionListener(e -> afficherResultats());
-        btnQuitter.addActionListener(e -> quitter());
-
-        // Ajout des boutons avec positionnement centré
-        gbc.gridy = 0; // Ligne 0
-        panel.add(btnConnexion, gbc);
-
-        gbc.gridy = 1; // Ligne 1
-        panel.add(btnInscription, gbc);
-
-        gbc.gridy = 2; // Ligne 2
-        panel.add(btnVoirNotifications, gbc);
-
-        gbc.gridy = 3; // Ligne 3
-        panel.add(btnVoirResultats, gbc);
-
-        gbc.gridy = 4; // Ligne 4
-        panel.add(btnQuitter, gbc);
-
-        frame.add(panel);
-        frame.setVisible(true);
-    }
-
-    static void quitter() {
-        System.exit(0);
-    }
-
-    static void afficherResultats() {
-        try (Connection conn = Database.getConnection()) {
-            String totalVotesQuery = "SELECT COUNT(*) AS total_votes FROM votes";
-            String candidateVotesQuery = "SELECT candidat, COUNT(*) AS votes FROM votes GROUP BY candidat";
-
-            int totalVotes = 0;
-
-            try (PreparedStatement ps = conn.prepareStatement(totalVotesQuery)) {
-                ResultSet rs = ps.executeQuery();
-                if (rs.next()) {
-                    totalVotes = rs.getInt("total_votes");
-                }
-            }
-
-            StringBuilder resultats = new StringBuilder("Résultats des votes :\n");
-            try (PreparedStatement ps = conn.prepareStatement(candidateVotesQuery)) {
-                ResultSet rs = ps.executeQuery();
-                while (rs.next()) {
-                    String candidat = rs.getString("candidat");
-                    int votes = rs.getInt("votes");
-                    double pourcentage = totalVotes > 0 ? (votes * 100.0 / totalVotes) : 0.0;
-                    resultats.append(candidat).append(": ").append(votes).append(" votes (")
-                            .append(String.format("%.2f", pourcentage)).append("%)\n");
-                }
-            }
-
-            JOptionPane.showMessageDialog(null, resultats.toString());
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "Erreur lors de l'affichage des résultats : " + e.getMessage());
-        }
-    }
-
-    static void afficherNotifications() {
-        try (Connection conn = Database.getConnection()) {
-            String query = "SELECT identifiant_utilisateur, candidat FROM votes";
-            StringBuilder notifications = new StringBuilder("Utilisateurs ayant voté :\n");
-
-            try (PreparedStatement ps = conn.prepareStatement(query)) {
-                ResultSet rs = ps.executeQuery();
-                while (rs.next()) {
-                    String utilisateur = rs.getString("identifiant_utilisateur");
-                    String candidat = rs.getString("candidat");
-                    notifications.append("- ").append(utilisateur).append(" a voté pour ").append(candidat).append("\n");
-                }
-            }
-
-            JOptionPane.showMessageDialog(null, notifications.toString());
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "Erreur lors de la récupération des notifications : " + e.getMessage());
-        }
-    }
-
-    static void styliserBouton(JButton bouton) {
-        bouton.setFont(new Font("Arial", Font.PLAIN, 14));
-        bouton.setBackground(new Color(173, 216, 230));
-        bouton.setFocusPainted(false);
-    }
-
-    static void connexion() {
-        String identifiant = JOptionPane.showInputDialog("Veuillez entrer votre identifiant : ");
-        String motDePasse = JOptionPane.showInputDialog("Veuillez entrer votre mot de passe : ");
-
-        if (identifiant == null || identifiant.trim().isEmpty() || motDePasse == null || motDePasse.trim().isEmpty()) {
-            JOptionPane.showMessageDialog(null, "Veuillez remplir tous les champs !");
-            return;
-        }
-
-        if (validerConnexion(identifiant, hashPassword(motDePasse))) {
-            estConnecte = true;
-            identifiantConnecte = identifiant;
-            aVote = aDejaVote(identifiant);
-            JOptionPane.showMessageDialog(null, "Connexion réussie !");
-
-            if (roleUtilisateur(identifiant).equals("admin")) {
-                afficherPageAdmin(); // L'administrateur voit le menu de gestion des candidats
-            } else {
-                afficherInterfaceVote(); // Un utilisateur normal vote
-            }
-        } else {
-            JOptionPane.showMessageDialog(null, "Identifiant ou mot de passe incorrect !");
-        }
-    }
-    
-    
-    
-
-    private static void afficherInterfaceVote() {
-        // Vérifier si l'utilisateur a déjà voté
-        if (aVote) {
-            JOptionPane.showMessageDialog(null, "Vous avez déjà voté !");
-            return;
-        }
-
-        // Afficher l'interface de vote
-        JFrame frame = new JFrame("Interface de Vote");
-        frame.setSize(500, 400);
-        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS)); // BoxLayout en Y pour les boutons verticaux
-
-        JLabel label = new JLabel("Sélectionnez un candidat pour voter :");
-        label.setAlignmentX(Component.CENTER_ALIGNMENT);
-        panel.add(label); // Ajouter le label au début
-
-        // Récupérer les candidats depuis la base de données
-        try (Connection conn = Database.getConnection()) {
-            String query = "SELECT nom FROM candidats";
-            try (PreparedStatement ps = conn.prepareStatement(query)) {
-                ResultSet rs = ps.executeQuery();
-                while (rs.next()) {
-                    String candidat = rs.getString("nom");
-                    JButton btnCandidat = new JButton(candidat);
-                    btnCandidat.setAlignmentX(Component.CENTER_ALIGNMENT); // Centrer chaque bouton
-
-                    // Action à effectuer lors du clic sur un candidat
-                    btnCandidat.addActionListener(e -> voter(candidat));
-                    panel.add(btnCandidat);
-                    
-                    // Ajouter un espace après chaque bouton de candidat pour l'espacement
-                    panel.add(Box.createRigidArea(new Dimension(0, 10))); // Espacement entre les boutons
-                }
-            }
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "Erreur lors de la récupération des candidats : " + e.getMessage());
-        }
-
-        // Ajouter un bouton "Retour"
-        JButton btnRetour = new JButton("Retour");
-        styliserBouton(btnRetour);
-        btnRetour.setAlignmentX(Component.CENTER_ALIGNMENT); // Centrer le bouton Retour
-        btnRetour.addActionListener(e -> {
-            frame.dispose();
-            afficherPageAccueil();
-        });
-
-        // Ajouter un espace avant le bouton Retour
-        panel.add(Box.createRigidArea(new Dimension(0, 20))); // Plus d'espace avant le bouton "Retour"
-        panel.add(btnRetour);
-
-        frame.add(panel);
-        frame.setLocationRelativeTo(null); // Centrer la fenêtre sur l'écran
-        frame.setVisible(true);
-    }
-
-
-
-    static void voter(String candidat) {
-        // Enregistrer le vote de l'utilisateur
-        try (Connection conn = Database.getConnection()) {
-            String insertVoteQuery = "INSERT INTO votes (identifiant_utilisateur, candidat) VALUES (?, ?)";
-            try (PreparedStatement ps = conn.prepareStatement(insertVoteQuery)) {
-                ps.setString(1, identifiantConnecte); // Utilisateur connecté
-                ps.setString(2, candidat); // Candidat choisi
-                ps.executeUpdate();
-                aVote = true; // Marquer l'utilisateur comme ayant voté
-
-                JOptionPane.showMessageDialog(null, "Vote enregistré pour " + candidat + " !");
-            }
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "Erreur lors du vote : " + e.getMessage());
-        }
-    }
-
-    
-
-
-    
-    
-    
-    static void afficherPageAdmin() {
-        JFrame frame = new JFrame("Gestion des Candidats");
-        frame.setSize(500, 400);
-        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-
-        // Création d'un panel avec GridBagLayout pour une disposition plus souple et symétrique
-        JPanel panel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(10, 10, 10, 10); // Espacement autour des boutons
-
-        // Création des boutons
-        JButton btnAjouterCandidat = new JButton("Ajouter Candidat");
-        JButton btnModifierCandidat = new JButton("Modifier Candidat");
-        JButton btnSupprimerCandidat = new JButton("Supprimer Candidat");
-        JButton btnRetour = new JButton("Retour");
-
-        // Application du style aux boutons
-        styliserBouton(btnAjouterCandidat);
-        styliserBouton(btnModifierCandidat);
-        styliserBouton(btnSupprimerCandidat);
-        styliserBouton(btnRetour);
-
-        // Définir les actions des boutons
-        btnAjouterCandidat.addActionListener(e -> ajouterCandidat());
-        btnModifierCandidat.addActionListener(e -> modifierCandidat());
-        btnSupprimerCandidat.addActionListener(e -> supprimerCandidat());
-        btnRetour.addActionListener(e -> {
-            frame.dispose();
-            afficherPageAccueil(); // Retour à la page d'accueil après gestion
-        });
-
-        // Configuration du GridBagConstraints pour centrer et aligner les boutons
-        gbc.gridx = 0;  // Position horizontale (1 colonne)
-        gbc.gridy = 0;  // Première ligne
-        gbc.gridwidth = 1; // Un bouton par ligne
-        gbc.anchor = GridBagConstraints.CENTER;  // Centrer le bouton horizontalement
-        panel.add(btnAjouterCandidat, gbc);
-
-        gbc.gridy = 1;  // Ligne suivante pour le bouton suivant
-        panel.add(btnModifierCandidat, gbc);
-
-        gbc.gridy = 2;  // Ligne suivante
-        panel.add(btnSupprimerCandidat, gbc);
-
-        gbc.gridy = 3;  // Dernière ligne pour le bouton Retour
-        panel.add(btnRetour, gbc);
-
-        // Ajout du panel à la fenêtre
-        frame.add(panel);
-        frame.setLocationRelativeTo(null); // Centrer la fenêtre
-        frame.setVisible(true);
-    }
-
-
-    static void ajouterCandidat() {
-        String nomCandidat = JOptionPane.showInputDialog("Nom du nouveau candidat :");
-        if (nomCandidat != null && !nomCandidat.trim().isEmpty()) {
-            try (Connection conn = Database.getConnection()) {
-                String query = "INSERT INTO candidats (nom) VALUES (?)";
-                try (PreparedStatement ps = conn.prepareStatement(query)) {
-                    ps.setString(1, nomCandidat);
-                    ps.executeUpdate();
-                    JOptionPane.showMessageDialog(null, "Candidat ajouté avec succès !");
-                }
-            } catch (SQLException e) {
-                JOptionPane.showMessageDialog(null, "Erreur lors de l'ajout du candidat : " + e.getMessage());
-            }
-        } else {
-            JOptionPane.showMessageDialog(null, "Le nom du candidat ne peut pas être vide.");
-        }
-    }
-
-    static void modifierCandidat() {
-        String nomCandidatAncien = JOptionPane.showInputDialog("Nom actuel du candidat :");
-        if (nomCandidatAncien != null && !nomCandidatAncien.trim().isEmpty()) {
-            String nomCandidatNouveau = JOptionPane.showInputDialog("Nouveau nom du candidat :");
-            if (nomCandidatNouveau != null && !nomCandidatNouveau.trim().isEmpty()) {
-                try (Connection conn = Database.getConnection()) {
-                    String query = "UPDATE candidats SET nom = ? WHERE nom = ?";
-                    try (PreparedStatement ps = conn.prepareStatement(query)) {
-                        ps.setString(1, nomCandidatNouveau);
-                        ps.setString(2, nomCandidatAncien);
-                        ps.executeUpdate();
-                        JOptionPane.showMessageDialog(null, "Candidat modifié avec succès !");
-                    }
-                } catch (SQLException e) {
-                    JOptionPane.showMessageDialog(null, "Erreur lors de la modification du candidat : " + e.getMessage());
-                }
-            }
-        } else {
-            JOptionPane.showMessageDialog(null, "Nom du candidat non trouvé.");
-        }
-    }
-
-    static void supprimerCandidat() {
-        String nomCandidat = JOptionPane.showInputDialog("Nom du candidat à supprimer :");
-        if (nomCandidat != null && !nomCandidat.trim().isEmpty()) {
-            // Vérifier si le candidat existe
-            try (Connection conn = Database.getConnection()) {
-                // Vérification des votes existants
-                String checkVotesQuery = "SELECT COUNT(*) FROM votes WHERE candidat = ?";
-                try (PreparedStatement psCheck = conn.prepareStatement(checkVotesQuery)) {
-                    psCheck.setString(1, nomCandidat);
-                    ResultSet rs = psCheck.executeQuery();
-                    if (rs.next() && rs.getInt(1) > 0) {
-                        // Si des votes existent pour ce candidat, réattribuer ou supprimer les votes
-                        int option = JOptionPane.showConfirmDialog(null,
-                                "Ce candidat a des votes. Souhaitez-vous réattribuer ses votes ou les supprimer ?",
-                                "Réattribution des votes",
-                                JOptionPane.YES_NO_OPTION);
-
-                        if (option == JOptionPane.YES_OPTION) {
-                            // Réattribuer les votes à un autre candidat (exemple : à un candidat par défaut)
-                            String nouveauCandidat = JOptionPane.showInputDialog("Veuillez entrer le nom du nouveau candidat :");
-                            if (nouveauCandidat != null && !nouveauCandidat.trim().isEmpty()) {
-                                String updateVotesQuery = "UPDATE votes SET candidat = ? WHERE candidat = ?";
-                                try (PreparedStatement psUpdate = conn.prepareStatement(updateVotesQuery)) {
-                                    psUpdate.setString(1, nouveauCandidat);
-                                    psUpdate.setString(2, nomCandidat);
-                                    psUpdate.executeUpdate();
-                                    JOptionPane.showMessageDialog(null, "Les votes ont été réattribués à " + nouveauCandidat);
-                                }
-                            }
-                        } else {
-                            // Supprimer les votes associés à ce candidat
-                            String deleteVotesQuery = "DELETE FROM votes WHERE candidat = ?";
-                            try (PreparedStatement psDeleteVotes = conn.prepareStatement(deleteVotesQuery)) {
-                                psDeleteVotes.setString(1, nomCandidat);
-                                psDeleteVotes.executeUpdate();
-                                JOptionPane.showMessageDialog(null, "Tous les votes pour ce candidat ont été supprimés.");
-                            }
-                        }
-                    }
-                }
-
-                // Supprimer le candidat de la base de données
-                String query = "DELETE FROM candidats WHERE nom = ?";
-                try (PreparedStatement ps = conn.prepareStatement(query)) {
-                    ps.setString(1, nomCandidat);
-                    int rowsAffected = ps.executeUpdate();
-                    if (rowsAffected > 0) {
-                        JOptionPane.showMessageDialog(null, "Candidat supprimé avec succès !");
-                    } else {
-                        JOptionPane.showMessageDialog(null, "Aucun candidat trouvé avec ce nom.");
-                    }
-                }
-            } catch (SQLException e) {
-                JOptionPane.showMessageDialog(null, "Erreur lors de la suppression du candidat : " + e.getMessage());
-            }
-        }
-    }
-
-     
-
-    static boolean validerConnexion(String identifiant, String motDePasse) {
-        try (Connection conn = Database.getConnection()) {
-            String query = "SELECT * FROM utilisateurs WHERE identifiant = ? AND mot_de_passe = ?";
-            try (PreparedStatement ps = conn.prepareStatement(query)) {
-                ps.setString(1, identifiant);
-                ps.setString(2, motDePasse);
-                ResultSet rs = ps.executeQuery();
-                return rs.next();
-            }
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "Erreur de connexion : " + e.getMessage());
-        }
-        return false;
-    }
-
-    static String roleUtilisateur(String identifiant) {
-        try (Connection conn = Database.getConnection()) {
-            String query = "SELECT role FROM utilisateurs WHERE identifiant = ?";
-            try (PreparedStatement ps = conn.prepareStatement(query)) {
-                ps.setString(1, identifiant);
-                ResultSet rs = ps.executeQuery();
-                if (rs.next()) {
-                    return rs.getString("role");
-                }
-            }
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "Erreur lors de la récupération du rôle : " + e.getMessage());
-        }
-        return "";
-    }
-
-    static boolean aDejaVote(String identifiant) {
-        try (Connection conn = Database.getConnection()) {
-            String query = "SELECT COUNT(*) FROM votes WHERE identifiant_utilisateur = ?";
-            try (PreparedStatement ps = conn.prepareStatement(query)) {
-                ps.setString(1, identifiant);
-                ResultSet rs = ps.executeQuery();
-                if (rs.next()) {
-                    return rs.getInt(1) > 0; // Retourne true si l'utilisateur a déjà voté
-                }
-            }
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "Erreur lors de la vérification du vote : " + e.getMessage());
-        }
-        return false;
-    }
-
-    static void inscrire() {
-        // Afficher une fenêtre d'inscription
-        JFrame frame = new JFrame("Inscription");
-        frame.setSize(400, 300);
-        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBackground(new Color(230, 230, 250));
-
-        // Créer les champs d'entrée pour l'identifiant, le mot de passe et l'âge
-        JTextField txtIdentifiant = new JTextField(20);
-        JPasswordField txtMotDePasse = new JPasswordField(20);
-        JTextField txtAge = new JTextField(20);
-
-        panel.add(new JLabel("Identifiant"));
-        panel.add(txtIdentifiant);
-        panel.add(new JLabel("Mot de Passe"));
-        panel.add(txtMotDePasse);
-        panel.add(new JLabel("Âge"));
-        panel.add(txtAge);
-
-        JButton btnInscrire = new JButton("S'inscrire");
-        btnInscrire.addActionListener(e -> {
-            String identifiant = txtIdentifiant.getText();
-            String motDePasse = new String(txtMotDePasse.getPassword());
-            String ageStr = txtAge.getText();
-
-            if (identifiant.trim().isEmpty() || motDePasse.trim().isEmpty() || ageStr.trim().isEmpty()) {
-                JOptionPane.showMessageDialog(frame, "Veuillez remplir tous les champs.");
-                return;
-            }
-
-            try {
-                int age = Integer.parseInt(ageStr);
-                inscrireUtilisateur(identifiant, motDePasse, age);
-                frame.dispose();
-                JOptionPane.showMessageDialog(null, "Inscription réussie !");
-            } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(frame, "L'âge doit être un nombre.");
-            }
-        });
-
-        panel.add(btnInscrire);
-
-        frame.add(panel);
-        frame.setLocationRelativeTo(null);
-        frame.setVisible(true);
-    }
-
-    static void inscrireUtilisateur(String identifiant, String motDePasse, int age) {
-        try (Connection conn = Database.getConnection()) {
-            String query = "INSERT INTO utilisateurs (identifiant, mot_de_passe, role, age) VALUES (?, ?, ?, ?)";
-            try (PreparedStatement ps = conn.prepareStatement(query)) {
-                ps.setString(1, identifiant);
-                ps.setString(2, hashPassword(motDePasse));
-                ps.setString(3, "utilisateur");
-                ps.setInt(4, age);
-                ps.executeUpdate();
-            }
-        } catch (SQLException e) {
-            JOptionPane.showMessageDialog(null, "Erreur lors de l'inscription : " + e.getMessage());
-        }
-    }
-
-    static String hashPassword(String motDePasse) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = digest.digest(motDePasse.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(hashBytes);
-        } catch (NoSuchAlgorithmException e) {
-            JOptionPane.showMessageDialog(null, "Erreur de hachage : " + e.getMessage());
-        }
-        return null;
-    }
-}
-*/
 
 package yeni;
 
@@ -702,7 +142,9 @@ public class SystemeDeVote {
             JOptionPane.showMessageDialog(null, "Sonuçları görüntülerken hata oluştu : " + e.getMessage());
         }
     }
-
+/*
+ * 
+ * loriginal 
     static void afficherNotifications() {
         try (Connection conn = Database.getConnection()) {
             String query = "SELECT identifiant_utilisateur, candidat FROM votes";
@@ -728,7 +170,53 @@ public class SystemeDeVote {
         bouton.setBackground(new Color(173, 216, 230));
         bouton.setFocusPainted(false);
     }
+*/
+    
+    
+   
+    
+    static void afficherNotifications() {
+        try (Connection conn = Database.getConnection()) {
+            // Inclure la date_vote dans la requête
+            String query = "SELECT identifiant_utilisateur, candidat, date_vote FROM votes";
+            StringBuilder notifications = new StringBuilder("Oy veren kullanıcılar :\n");
 
+            try (PreparedStatement ps = conn.prepareStatement(query)) {
+                ResultSet rs = ps.executeQuery();
+                while (rs.next()) {
+                    String utilisateur = rs.getString("identifiant_utilisateur");
+                    String candidat = rs.getString("candidat");
+                    String dateVote = rs.getString("date_vote"); // Récupérer la date du vote
+
+                    // Ajouter les informations au StringBuilder
+                    notifications.append("- ")
+                                 .append(utilisateur)
+                                 .append(", ")
+                                 .append(candidat)
+                                 .append(" oy verdi ")
+                                 .append("(Tarih: ")
+                                 .append(dateVote)
+                                 .append(")\n");
+                }
+            }
+
+            // Afficher les notifications
+            JOptionPane.showMessageDialog(null, notifications.toString());
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(null, "Bildirim kurtarma hatası : " + e.getMessage());
+        }
+    }
+
+    
+    
+    
+    static void styliserBouton(JButton bouton) {
+        bouton.setFont(new Font("Arial", Font.PLAIN, 14));
+        bouton.setBackground(new Color(173, 216, 230));
+        bouton.setFocusPainted(false);
+    }
+    
+    
     static void connexion() {
         String identifiant = JOptionPane.showInputDialog("Seçmeninizin kimliğini belirtin : ");
         String motDePasse = JOptionPane.showInputDialog("Parolanızı girin : ");
